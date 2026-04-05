@@ -1,0 +1,453 @@
+/* =========================================================
+   Automata Converter and Minimizer — Minimal Academic Style
+   ========================================================= */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 15px;
+}
+
+body {
+  font-family: Georgia, 'Times New Roman', serif;
+  background: #f5f5f5;
+  color: #111;
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+#app {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 24px 28px 60px;
+}
+
+/* ── Typography ─────────────────────────────────────────── */
+h1 {
+  font-size: 1.45rem;
+  font-weight: bold;
+  margin-bottom: 4px;
+  color: #111;
+}
+
+h2 {
+  font-size: 1rem;
+  font-weight: bold;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 4px;
+  color: #111;
+}
+
+.subtitle {
+  font-size: 0.84rem;
+  color: #555;
+  margin-bottom: 16px;
+}
+
+/* ── Examples row ───────────────────────────────────────── */
+.examples-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 20px;
+  font-size: 0.82rem;
+  color: #555;
+}
+
+.examples-row span {
+  margin-right: 4px;
+}
+
+/* ── Main two-column layout ─────────────────────────────── */
+.two-col {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 28px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .two-col {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Left: 5-tuple section ──────────────────────────────── */
+.tuple-section {
+  background: #fff;
+  border: 1px solid #ccc;
+  padding: 18px;
+}
+
+/* ── Form fields ────────────────────────────────────────── */
+.field {
+  margin-bottom: 13px;
+}
+
+.field label {
+  display: block;
+  font-size: 0.84rem;
+  font-weight: bold;
+  margin-bottom: 3px;
+  color: #222;
+  font-family: Georgia, serif;
+}
+
+.field small {
+  display: block;
+  font-size: 0.72rem;
+  color: #777;
+  margin-bottom: 4px;
+  font-family: Georgia, serif;
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  border: 1px solid #bbb;
+  padding: 6px 8px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.84rem;
+  background: #fff;
+  color: #111;
+  outline: none;
+  resize: vertical;
+}
+
+.field input:focus,
+.field textarea:focus {
+  border-color: #666;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* ── Type status ────────────────────────────────────────── */
+#type-status {
+  font-size: 0.8rem;
+  color: #444;
+  margin-bottom: 12px;
+  min-height: 1.2em;
+  font-family: Georgia, serif;
+}
+
+/* ── Error message ──────────────────────────────────────── */
+.error-msg {
+  font-size: 0.82rem;
+  color: #990000;
+  border: 1px solid #cc0000;
+  padding: 7px 10px;
+  background: #fff8f8;
+  margin-bottom: 10px;
+  font-family: Georgia, serif;
+}
+
+/* ── Action buttons ─────────────────────────────────────── */
+.action-row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+/* ── Buttons (global) ───────────────────────────────────── */
+button {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 0.84rem;
+  padding: 6px 14px;
+  border: 1px solid #bbb;
+  background: #f0f0f0;
+  color: #111;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #e0e0e0;
+  border-color: #999;
+}
+
+button:active {
+  background: #d0d0d0;
+}
+
+button.active,
+button.active:hover {
+  background: #111;
+  color: #fff;
+  border-color: #111;
+}
+
+/* ── Canvas section ─────────────────────────────────────── */
+.canvas-section {
+  background: #fff;
+  border: 1px solid #ccc;
+  padding: 18px;
+}
+
+.canvas-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+#diagram-canvas {
+  display: block;
+  width: 100%;
+  height: 380px;
+  border: 1px solid #ccc;
+  background: #fff;
+  cursor: crosshair;
+}
+
+.hint {
+  font-size: 0.75rem;
+  color: #888;
+  margin-top: 6px;
+  font-family: Georgia, serif;
+}
+
+/* ── Results area ───────────────────────────────────────── */
+#results-area {
+  margin-top: 28px;
+}
+
+#results-area > hr {
+  border: none;
+  border-top: 1px solid #bbb;
+  margin-bottom: 18px;
+}
+
+#results-area h2 {
+  margin-bottom: 14px;
+}
+
+#result-action-label {
+  font-weight: normal;
+  font-size: 0.84rem;
+  color: #555;
+  margin-left: 8px;
+}
+
+/* ── Result tabs ────────────────────────────────────────── */
+.result-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #bbb;
+  padding-bottom: 6px;
+}
+
+.tab-btn {
+  font-size: 0.8rem;
+  padding: 4px 12px;
+}
+
+.tab-pane {
+  display: none;
+}
+
+.tab-pane.active {
+  display: block;
+}
+
+/* ── Tab: Comparison ────────────────────────────────────── */
+.comparison-cols {
+  display: grid;
+  grid-template-columns: 1fr 40px 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.cmp-arrow {
+  text-align: center;
+  padding-top: 36px;
+  font-size: 1.2rem;
+  color: #555;
+}
+
+.tuple-block {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.82rem;
+  line-height: 1.9;
+  border: 1px solid #ddd;
+  padding: 10px 12px;
+  background: #fafafa;
+  margin-top: 6px;
+  color: #333;
+}
+
+.tuple-block .tkey {
+  color: #111;
+  font-weight: bold;
+}
+
+@media (max-width: 700px) {
+  .comparison-cols {
+    grid-template-columns: 1fr;
+  }
+  .cmp-arrow { display: none; }
+}
+
+/* ── Toggle row (table/diagram input vs output) ─────────── */
+.toggle-row {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+
+.toggle-btn {
+  font-size: 0.78rem;
+  padding: 3px 10px;
+}
+
+/* ── Tab: Table ─────────────────────────────────────────── */
+#table-container,
+#intermediate-table {
+  overflow-x: auto;
+}
+
+table.trans-table {
+  border-collapse: collapse;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.82rem;
+  width: 100%;
+}
+
+table.trans-table th {
+  background: #eeeeee;
+  border: 1px solid #ccc;
+  padding: 6px 12px;
+  text-align: left;
+  font-weight: bold;
+  color: #333;
+}
+
+table.trans-table td {
+  border: 1px solid #ddd;
+  padding: 5px 12px;
+  color: #222;
+}
+
+table.trans-table tr:nth-child(even) td {
+  background: #fafafa;
+}
+
+table.trans-table td.state-col {
+  font-weight: bold;
+}
+
+table.trans-table td.dead-cell {
+  color: #aaa;
+}
+
+.state-marker {
+  font-size: 0.7rem;
+  margin-right: 3px;
+  color: #555;
+}
+
+/* ── Tab: Output Diagram ────────────────────────────────── */
+#output-canvas {
+  display: block;
+  width: 100%;
+  min-height: 360px;
+  border: 1px solid #ccc;
+  background: #fff;
+}
+
+.legend {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: #666;
+  font-family: Georgia, serif;
+}
+
+/* ── Tab: Steps ─────────────────────────────────────────── */
+#steps-container {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.82rem;
+}
+
+.step-group {
+  border: 1px solid #ccc;
+  margin-bottom: 10px;
+}
+
+.step-group-header {
+  padding: 8px 12px;
+  background: #eee;
+  font-weight: bold;
+  cursor: pointer;
+  user-select: none;
+  font-family: Georgia, serif;
+}
+
+.step-group-header:hover {
+  background: #e0e0e0;
+}
+
+.step-group-body {
+  display: none;
+  padding: 10px 12px;
+  border-top: 1px solid #ddd;
+}
+
+.step-group.open .step-group-body {
+  display: block;
+}
+
+.step-item {
+  display: flex;
+  gap: 10px;
+  padding: 4px 0;
+  border-bottom: 1px solid #eeeeee;
+  line-height: 1.5;
+}
+
+.step-item:last-child {
+  border-bottom: none;
+}
+
+.step-num {
+  min-width: 22px;
+  font-weight: bold;
+  color: #555;
+  flex-shrink: 0;
+}
+
+.step-text {
+  color: #333;
+}
+
+.step-text em {
+  font-style: normal;
+  font-weight: bold;
+  color: #111;
+}
+
+/* ── Intermediate DFA ───────────────────────────────────── */
+#tab-pane-intermediate p {
+  font-size: 0.84rem;
+  color: #555;
+  margin-bottom: 10px;
+  font-family: Georgia, serif;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #ccc; }

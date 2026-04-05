@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Automata Converter and Minimizer</title>
+  <meta name="description" content="Convert NFA to DFA and minimize DFAs. A simple academic tool for Theory of Computation." />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <h1>Automata Converter and Minimizer</h1>
+  <p class="subtitle">NFA to DFA Conversion and DFA Minimization via Subset Construction and Table Filling</p>
+
+  <div class="examples-row">
+    <span>Load example:</span>
+    <button id="ex-nfa-eps">NFA with epsilon</button>
+    <button id="ex-nfa-nd">NFA nondeterministic</button>
+    <button id="ex-dfa-min">DFA minimizable</button>
+    <button id="ex-dfa-already">DFA already minimal</button>
+  </div>
+
+  <div class="two-col">
+
+    <!-- LEFT: 5-tuple text input -->
+    <div class="tuple-section">
+      <h2>5-Tuple Input</h2>
+
+      <div id="type-status"></div>
+
+      <div class="field">
+        <label for="input-states">Q — States</label>
+        <small>comma separated</small>
+        <input type="text" id="input-states" placeholder="q0, q1, q2" autocomplete="off" />
+      </div>
+
+      <div class="field">
+        <label for="input-alphabet">Sigma — Alphabet</label>
+        <small>do not include epsilon</small>
+        <input type="text" id="input-alphabet" placeholder="a, b" autocomplete="off" />
+      </div>
+
+      <div class="field">
+        <label for="input-transitions">Delta — Transitions</label>
+        <small>one per line: state,symbol=next &nbsp; (use e for epsilon)</small>
+        <textarea id="input-transitions" rows="7" placeholder="q0,a=q1&#10;q0,e=q2&#10;q1,b=q2" autocomplete="off"></textarea>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="input-start">q0 — Start State</label>
+          <input type="text" id="input-start" placeholder="q0" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="input-finals">F — Final States</label>
+          <small>comma separated</small>
+          <input type="text" id="input-finals" placeholder="q2" autocomplete="off" />
+        </div>
+      </div>
+
+      <div id="input-error" class="error-msg" style="display:none;"></div>
+
+      <div class="action-row">
+        <button id="btn-convert">Convert NFA to DFA</button>
+        <button id="btn-minimize">Minimize DFA</button>
+        <button id="btn-both">NFA to DFA then Minimize</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: Canvas diagram editor -->
+    <div class="canvas-section">
+      <h2>Diagram</h2>
+
+      <div class="canvas-tools">
+        <button id="tool-add-state">Add State</button>
+        <button id="tool-add-transition">Add Transition</button>
+        <button id="tool-delete">Delete</button>
+        <button id="tool-clear">Clear</button>
+      </div>
+
+      <canvas id="diagram-canvas"></canvas>
+      <div id="canvas-hint" class="hint">Select "Add State", then click on the canvas to place a state.</div>
+    </div>
+
+  </div><!-- /two-col -->
+
+  <!-- Results (shown after API call) -->
+  <div id="results-area" style="display:none;">
+    <hr />
+    <h2>Results <span id="result-action-label"></span></h2>
+
+    <div class="result-tabs">
+      <button class="tab-btn active" data-tab="comparison">Before / After</button>
+      <button class="tab-btn" data-tab="table">Transition Table</button>
+      <button class="tab-btn" data-tab="output-diagram">Diagram</button>
+      <button class="tab-btn" data-tab="steps">Steps</button>
+      <button class="tab-btn" id="tab-btn-intermediate" data-tab="intermediate" style="display:none;">Intermediate DFA</button>
+    </div>
+
+    <!-- Tab: Before/After -->
+    <div class="tab-pane active" id="tab-pane-comparison">
+      <div class="comparison-cols">
+        <div id="cmp-input">
+          <strong id="cmp-input-label">Input</strong>
+          <div id="cmp-input-tuple" class="tuple-block"></div>
+        </div>
+        <div class="cmp-arrow">=&gt;</div>
+        <div id="cmp-output">
+          <strong id="cmp-output-label">Output</strong>
+          <div id="cmp-output-tuple" class="tuple-block"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Table -->
+    <div class="tab-pane" id="tab-pane-table">
+      <div class="toggle-row">
+        <button id="tbl-input-btn" class="toggle-btn active">Input</button>
+        <button id="tbl-output-btn" class="toggle-btn">Output</button>
+      </div>
+      <div id="table-container"></div>
+    </div>
+
+    <!-- Tab: Output Diagram -->
+    <div class="tab-pane" id="tab-pane-output-diagram">
+      <div class="toggle-row">
+        <button id="diag-input-btn" class="toggle-btn active">Input</button>
+        <button id="diag-output-btn" class="toggle-btn">Output</button>
+      </div>
+      <canvas id="output-canvas"></canvas>
+      <div class="legend">
+        <span>Arrow = start state</span>
+        <span>Double circle = final state</span>
+        <span>Empty circle = dead state (empty set)</span>
+      </div>
+    </div>
+
+    <!-- Tab: Steps -->
+    <div class="tab-pane" id="tab-pane-steps">
+      <div id="steps-container"></div>
+    </div>
+
+    <!-- Tab: Intermediate DFA -->
+    <div class="tab-pane" id="tab-pane-intermediate">
+      <p>Intermediate DFA (after NFA to DFA conversion, before minimization)</p>
+      <div id="intermediate-tuple" class="tuple-block"></div>
+      <div id="intermediate-table"></div>
+    </div>
+
+  </div><!-- /results-area -->
+
+</div><!-- /app -->
+
+<script src="js/api.js"></script>
+<script src="js/diagram-editor.js"></script>
+<script src="js/diagram-renderer.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+
+</body>
+</html>
