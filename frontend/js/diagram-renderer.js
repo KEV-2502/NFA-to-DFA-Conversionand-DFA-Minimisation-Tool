@@ -1,27 +1,16 @@
-/**
- * diagram-renderer.js
- * Read-only canvas renderer for automata returned by the API.
- * Renders states as circles, final states as double circles,
- * start state with an incoming arrow. Uses circular auto-layout.
- *
- * Exposes: DiagramRenderer.render(canvas, automatonData)
- *   automatonData: { states, start_state, final_states, edges }
- *   edges: [{ from, symbol, to }]
- */
-
 'use strict';
 
 const DiagramRenderer = (() => {
 
-  const R = 26;
+  const R          = 28;
   const ARROW_SIZE = 8;
-  const PADDING = 70;
+  const SELF_LOOP_H = 50;
 
   function render(canvas, data) {
     if (!canvas || !data) return;
     const ctx = canvas.getContext('2d');
-    const W = canvas.width = canvas.offsetWidth || 600;
-    const H = canvas.height = canvas.offsetHeight || 360;
+    const W   = canvas.width  = canvas.offsetWidth  || canvas.parentElement?.clientWidth  || 700;
+    const H   = canvas.height = canvas.offsetHeight || 380;
 
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#ffffff';
@@ -38,240 +27,298 @@ const DiagramRenderer = (() => {
       return;
     }
 
-    const pos = _layout(states, W, H);
-    const groups = _groupEdges(edges || []);
+    const edgeObjs  = _dedupEdges(edges || []);
+    const stateObjs = _layout(states, start_state, final_states || [], edgeObjs, W, H);
+    const groups    = _groupEdges(edgeObjs);
 
-    groups.forEach(g => _drawEdge(ctx, g, pos, groups));
+    groups.forEach(g => _drawEdge(ctx, g, stateObjs, groups));
+    stateObjs.forEach(s => _drawState(ctx, s));
+  }
 
-    states.forEach(name => {
-      _drawState(ctx, name, pos[name], {
-        isStart: name === start_state,
-        isFinal: (final_states || []).includes(name),
-        isDead: name === '\u2205'
-      });
+  function _dedupEdges(edges) {
+    const seen = new Set();
+    return edges.filter(e => {
+      const k = e.from + '\x00' + e.symbol + '\x00' + e.to;
+      if (seen.has(k)) return false;
+      seen.add(k); return true;
     });
   }
 
-  // ── Layout ────────────────────────────────────────────────────────────
-  function _layout(states, W, H) {
-    const pos = {};
-    const n = states.length;
-    const cx = W / 2, cy = H / 2;
-    const r = Math.min(W, H) / 2 - PADDING;
-
-    if (n === 1) {
-      pos[states[0]] = { x: cx, y: cy };
-    } else if (n <= 5) {
-      const totalW = n * (R * 2 + 36) - 36;
-      const startX = (W - totalW) / 2 + R;
-      states.forEach((name, i) => {
-        pos[name] = { x: startX + i * (R * 2 + 36), y: cy };
-      });
-    } else {
-      states.forEach((name, i) => {
-        const angle = (2 * Math.PI * i / n) - Math.PI / 2;
-        pos[name] = { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
-      });
-    }
-    return pos;
-  }
-
-  // ── Edge grouping ─────────────────────────────────────────────────────
   function _groupEdges(edges) {
     const map = new Map();
     edges.forEach(e => {
-      const key = e.from + '\u2192' + e.to;
-      if (!map.has(key)) map.set(key, { from: e.from, to: e.to, symbols: [] });
-      const g = map.get(key);
+      const k = e.from + '\u2192' + e.to;
+      if (!map.has(k)) map.set(k, { from: e.from, to: e.to, symbols: [] });
+      const g = map.get(k);
       if (!g.symbols.includes(e.symbol)) g.symbols.push(e.symbol);
     });
     return Array.from(map.values());
   }
 
-  function _hasReverse(groups, from, to) {
-    return groups.some(g => g.from === to && g.to === from);
+  function _layout(names, startState, finalStates, edges, W, H) {
+    const n   = names.length;
+    const pos = {};
+
+    // ONLY vertical offset (no shrinking)
+    const PAD_TOP = R + SELF_LOOP_H + 16;
+
+    const cx = W / 2;
+    const cy = (H / 2) + (PAD_TOP / 2);
+
+    if (n === 1) {
+      pos[names[0]] = { x: cx, y: cy };
+
+    } else if (n === 2) {
+      pos[names[0]] = { x: cx - 110, y: cy };
+      pos[names[1]] = { x: cx + 110, y: cy };
+
+    } else if (n <= 4) {
+      const r = Math.min(W, H) / 2 - 70;
+      _circular(names, cx, cy, r, pos);
+
+    } else if (n <= 6) {
+      const order = _topoOrder(names, startState, edges) || names;
+      if (_hasSkipEdges(order, edges, 1)) {
+        const r = Math.min(W, H) / 2 - 70;
+        _circular(names, cx, cy, r, pos);
+      } else {
+        _linearLayout(order, W, cy, pos);
+      }
+
+    } else {
+      const r = Math.min(W, H) / 2 - 70;
+      _circular(names, cx, cy, r, pos);
+    }
+
+    return names.map(name => ({
+      name,
+      x:       pos[name]?.x ?? cx,
+      y:       pos[name]?.y ?? cy,
+      isStart: name === startState,
+      isFinal: finalStates.includes(name)
+    }));
   }
 
-  // ── Edge drawing ──────────────────────────────────────────────────────
-  function _drawEdge(ctx, group, pos, allGroups) {
-    const fp = pos[group.from];
-    const tp = pos[group.to];
-    if (!fp || !tp) return;
+  function _circular(names, cx, cy, r, out) {
+    names.forEach((name, i) => {
+      const angle = (2 * Math.PI * i / names.length) - Math.PI / 2;
+      out[name] = {
+        x: cx + r * Math.cos(angle),
+        y: cy + r * Math.sin(angle)
+      };
+    });
+  }
 
-    const label = group.symbols.join(', ');
+  function _linearLayout(names, W, cy, out) {
+    const n      = names.length;
+    const maxLbl = Math.max(...names.map(nm => nm.length * 7));
+    const cellW  = Math.max(R * 2, maxLbl) + 50;
+    const totalW = n * cellW - 50;
+    const startX = Math.max(R + 40, (W - totalW) / 2 + cellW / 2);
+
+    names.forEach((name, i) => {
+      out[name] = { x: startX + i * cellW, y: cy };
+    });
+  }
+
+  function _hasSkipEdges(order, edges, maxSkip) {
+    const idx = {};
+    order.forEach((n, i) => { idx[n] = i; });
+    return edges.some(e => {
+      if (e.from === e.to) return false;
+      const fi = idx[e.from], ti = idx[e.to];
+      if (fi == null || ti == null) return false;
+      return Math.abs(fi - ti) > maxSkip + 1;
+    });
+  }
+
+  function _topoOrder(names, startState, edges) {
+    if (!startState || !names.includes(startState)) return null;
+    const adj = {};
+    names.forEach(n => { adj[n] = []; });
+
+    edges.forEach(e => {
+      if (e.from !== e.to && adj[e.from] && !adj[e.from].includes(e.to))
+        adj[e.from].push(e.to);
+    });
+
+    const visited = new Set();
+    const order   = [];
+    const queue   = [startState];
+
+    while (queue.length) {
+      const n = queue.shift();
+      if (visited.has(n)) continue;
+      visited.add(n); order.push(n);
+      (adj[n] || []).forEach(nb => {
+        if (!visited.has(nb)) queue.push(nb);
+      });
+    }
+
+    names.forEach(n => {
+      if (!visited.has(n)) order.push(n);
+    });
+
+    return order;
+  }
+
+  function _drawEdge(ctx, group, stateObjs, allGroups) {
+    const fs = stateObjs.find(s => s.name === group.from);
+    const ts = stateObjs.find(s => s.name === group.to);
+    if (!fs || !ts) return;
+
+    const label = group.symbols.slice().sort().join(', ');
     ctx.strokeStyle = '#333';
-    ctx.fillStyle = '#333';
-    ctx.lineWidth = 1;
+    ctx.fillStyle   = '#333';
+    ctx.lineWidth   = 1.2;
 
     if (group.from === group.to) {
-      _drawSelfLoop(ctx, fp.x, fp.y, label);
+      _selfLoop(ctx, fs, label);
       return;
     }
 
-    if (_hasReverse(allGroups, group.from, group.to)) {
-      // ── FIX: compute the perpendicular from the CANONICAL direction
-      // (smaller name → larger name), so both directions get opposite offsets.
-      const canonical = group.from < group.to;
-      // Canonical direction: always from lex-smaller to lex-larger
-      const cfp = canonical ? fp : tp;
-      const ctp = canonical ? tp : fp;
+    const hasReverse = allGroups.some(g =>
+      g.from === group.to && g.to === group.from
+    );
 
-      const cdx = ctp.x - cfp.x;
-      const cdy = ctp.y - cfp.y;
-      const clen = Math.sqrt(cdx * cdx + cdy * cdy);
-      if (clen < 1) return;
-
-      // Perpendicular to canonical direction (rotated 90° CCW)
-      const cnx = -cdy / clen;
-      const cny =  cdx / clen;
-
-      // Canonical direction curves to +normal, reverse curves to -normal
-      const dir = canonical ? 1 : -1;
-      const offset = 40;
-
-      const mx = (fp.x + tp.x) / 2;
-      const my = (fp.y + tp.y) / 2;
-      const cpx = mx + cnx * offset * dir;
-      const cpy = my + cny * offset * dir;
-
-      // Exit fp toward cp, enter tp from cp
-      const ang1 = Math.atan2(cpy - fp.y, cpx - fp.x);
-      const ang2 = Math.atan2(cpy - tp.y, cpx - tp.x);
-      const sx = fp.x + Math.cos(ang1) * R;
-      const sy = fp.y + Math.sin(ang1) * R;
-      const ex = tp.x + Math.cos(ang2) * R;
-      const ey = tp.y + Math.sin(ang2) * R;
-
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.quadraticCurveTo(cpx, cpy, ex, ey);
-      ctx.stroke();
-
-      // Arrowhead tangent at t=1: direction from cp toward endpoint
-      _arrowHead(ctx, ex, ey, Math.atan2(ey - cpy, ex - cpx));
-
-      // Label at Bezier midpoint, nudged outward
-      const lx = 0.25 * sx + 0.5 * cpx + 0.25 * ex;
-      const ly = 0.25 * sy + 0.5 * cpy + 0.25 * ey;
-      _edgeLabel(ctx, label, lx + cnx * 14 * dir, ly + cny * 14 * dir);
-
+    if (hasReverse) {
+      _curvedEdge(ctx, fs, ts, group.from < group.to ? 1 : -1, label);
     } else {
-      const dx = tp.x - fp.x;
-      const dy = tp.y - fp.y;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      if (len < 1) return;
-      const ux = dx / len, uy = dy / len;
-      const nx = -uy, ny = ux;
-
-      const x1 = fp.x + ux * R;
-      const y1 = fp.y + uy * R;
-      const x2 = tp.x - ux * R;
-      const y2 = tp.y - uy * R;
-
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.stroke();
-
-      _arrowHead(ctx, x2, y2, Math.atan2(y2 - y1, x2 - x1));
-      _edgeLabel(ctx, label, (x1 + x2) / 2 - ny * 12, (y1 + y2) / 2 - nx * 12);
+      _straightEdge(ctx, fs, ts, label);
     }
   }
 
-  // Self-loop: cubic Bezier anchored on circle rim, label inside the arch.
-  function _drawSelfLoop(ctx, x, y, label) {
-    const loopH = 46;
-    const loopW = 24;
+  function _straightEdge(ctx, fs, ts, label) {
+    const dx  = ts.x - fs.x, dy = ts.y - fs.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return;
 
-    // Anchor points on circle surface, symmetrically left/right of top
-    const startAngle = -Math.PI / 2 - 0.42;
-    const endAngle   = -Math.PI / 2 + 0.42;
-    const x1 = x + R * Math.cos(startAngle);
-    const y1 = y + R * Math.sin(startAngle);
-    const x2 = x + R * Math.cos(endAngle);
-    const y2 = y + R * Math.sin(endAngle);
-
-    // Control points fan outward and upward
-    const cp1x = x - loopW, cp1y = y - R - loopH;
-    const cp2x = x + loopW, cp2y = y - R - loopH;
+    const ux = dx / len, uy = dy / len;
+    const x1 = fs.x + ux * R,       y1 = fs.y + uy * R;
+    const x2 = ts.x - ux * (R + 2), y2 = ts.y - uy * (R + 2);
 
     ctx.beginPath();
     ctx.moveTo(x1, y1);
-    ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x2, y2);
-    ctx.strokeStyle = '#333';
+    ctx.lineTo(x2, y2);
     ctx.stroke();
 
-    // Arrowhead: tangent at t=1 = direction from cp2 to endpoint
-    _arrowHead(ctx, x2, y2, Math.atan2(y2 - cp2y, x2 - cp2x));
-
-    // Label: place it at the visual apex of the arch (between cp1 and cp2)
-    _edgeLabel(ctx, label, x, y - R - loopH * 0.75);
+    _arrow(ctx, x2, y2, Math.atan2(dy, dx));
+    _label(ctx, label, (x1 + x2) / 2 - uy * 16, (y1 + y2) / 2 + ux * 16);
   }
 
-  function _arrowHead(ctx, x, y, angle) {
+  function _curvedEdge(ctx, fs, ts, dir, label) {
+    const mx  = (fs.x + ts.x) / 2, my = (fs.y + ts.y) / 2;
+    const dx  = ts.x - fs.x,       dy = ts.y - fs.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return;
+
+    const nx  = (-dy / len) * 50 * dir;
+    const ny  = (dx / len) * 50 * dir;
+    const cpx = mx + nx, cpy = my + ny;
+
+    const a1 = Math.atan2(cpy - fs.y, cpx - fs.x);
+    const sx = fs.x + Math.cos(a1) * R;
+    const sy = fs.y + Math.sin(a1) * R;
+
+    const a2 = Math.atan2(cpy - ts.y, cpx - ts.x);
+    const ex = ts.x + Math.cos(a2) * (R + 2);
+    const ey = ts.y + Math.sin(a2) * (R + 2);
+
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.quadraticCurveTo(cpx, cpy, ex, ey);
+    ctx.stroke();
+
+    _arrow(ctx, ex, ey, Math.atan2(ey - cpy, ex - cpx));
+
+    const lx = 0.25*sx + 0.5*cpx + 0.25*ex + (-dy/len)*16*dir;
+    const ly = 0.25*sy + 0.5*cpy + 0.25*ey + ( dx/len)*16*dir;
+    _label(ctx, label, lx, ly);
+  }
+
+  function _selfLoop(ctx, state, label) {
+    const x = state.x, y = state.y;
+    const lh = SELF_LOOP_H, lw = 26;
+
+    const x1 = x + R * Math.cos(-Math.PI / 2 - 0.4);
+    const y1 = y + R * Math.sin(-Math.PI / 2 - 0.4);
+    const x2 = x + R * Math.cos(-Math.PI / 2 + 0.4);
+    const y2 = y + R * Math.sin(-Math.PI / 2 + 0.4);
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.bezierCurveTo(x - lw, y - R - lh, x + lw, y - R - lh, x2, y2);
+    ctx.stroke();
+
+    _arrow(ctx, x2, y2, Math.atan2(y2 - (y - R - lh), x2 - (x + lw)));
+    _label(ctx, label, x, y - R - lh * 0.85);
+  }
+
+  function _arrow(ctx, x, y, angle) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(angle);
+
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.lineTo(-ARROW_SIZE, -ARROW_SIZE / 2);
-    ctx.lineTo(-ARROW_SIZE, ARROW_SIZE / 2);
+    ctx.lineTo(-ARROW_SIZE,  ARROW_SIZE / 2);
     ctx.closePath();
     ctx.fillStyle = '#333';
     ctx.fill();
+
     ctx.restore();
   }
 
-  function _edgeLabel(ctx, text, x, y) {
+  function _label(ctx, text, x, y) {
     ctx.save();
-    ctx.font = '11px "Courier New", monospace';
-    const w = ctx.measureText(text).width + 6;
-    ctx.fillStyle = 'rgba(255,255,255,0.88)';
-    ctx.fillRect(x - w / 2, y - 8, w, 16);
-    ctx.fillStyle = '#333';
-    ctx.textAlign = 'center';
+    ctx.font = '12px "Courier New", monospace';
+    const w = ctx.measureText(text).width + 8;
+
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.fillRect(x - w / 2, y - 9, w, 18);
+
+    ctx.fillStyle    = '#222';
+    ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, x, y);
+
     ctx.restore();
   }
 
-  // ── State drawing ─────────────────────────────────────────────────────
-  function _drawState(ctx, name, pos, { isStart, isFinal, isDead }) {
-    if (!pos) return;
-    const { x, y } = pos;
-
-    if (isFinal) {
+  function _drawState(ctx, s) {
+    if (s.isFinal) {
       ctx.beginPath();
-      ctx.arc(x, y, R + 5, 0, Math.PI * 2);
+      ctx.arc(s.x, s.y, R + 5, 0, Math.PI * 2);
       ctx.strokeStyle = '#333';
       ctx.lineWidth = 1;
       ctx.stroke();
     }
 
     ctx.beginPath();
-    ctx.arc(x, y, R, 0, Math.PI * 2);
-    ctx.fillStyle = isDead ? '#f0f0f0' : '#ffffff';
+    ctx.arc(s.x, s.y, R, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
     ctx.fill();
-    ctx.strokeStyle = isDead ? '#bbb' : '#333';
-    ctx.lineWidth = isDead ? 1 : 1.5;
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    ctx.fillStyle = isDead ? '#aaa' : '#111';
-    ctx.font = `bold ${name.length > 5 ? 10 : 12}px "Courier New", monospace`;
-    ctx.textAlign = 'center';
+    const fontSize = s.name.length > 7 ? 8 : s.name.length > 5 ? 10 : 13;
+    ctx.fillStyle    = '#111';
+    ctx.font         = `bold ${fontSize}px "Courier New", monospace`;
+    ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(name, x, y);
+    ctx.fillText(s.name, s.x, s.y);
 
-    if (isStart) {
-      const len = 28;
-      const ax = x - R - len;
+    if (s.isStart) {
       ctx.beginPath();
-      ctx.moveTo(ax, y);
-      ctx.lineTo(x - R, y);
+      ctx.moveTo(s.x - R - 30, s.y);
+      ctx.lineTo(s.x - R, s.y);
       ctx.strokeStyle = '#333';
       ctx.lineWidth = 1.5;
       ctx.stroke();
-      _arrowHead(ctx, x - R, y, 0);
+
+      _arrow(ctx, s.x - R, s.y, 0);
     }
   }
 

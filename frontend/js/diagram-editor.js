@@ -9,8 +9,8 @@
  * Dispatches 'diagram-changed' CustomEvent on every mutation.
  * Exposes:
  *   DiagramEditor.init()
- *   DiagramEditor.getDiagramData()     -- returns {states, transitions} for API
- *   DiagramEditor.updateFromTuple(...)  -- sync from text fields to diagram
+ *   DiagramEditor.getDiagramData()
+ *   DiagramEditor.updateFromTuple(...)
  *   DiagramEditor.clear()
  *   DiagramEditor.render()
  */
@@ -181,101 +181,84 @@ const DiagramEditor = (() => {
     const label = group.symbols.join(', ');
     ctx.strokeStyle = '#333'; ctx.fillStyle = '#333'; ctx.lineWidth = 1;
 
+    // Self-loop
     if (fs === ts) { _drawSelfLoop(fs, label); return; }
 
-    const hasReverse = edges.some(e => e.from === group.to && e.to === group.from);
+    // FIX: exclude self-loops from hasReverse — when from===to it always matches itself
+    const hasReverse = edges.some(e =>
+      e.from === group.to && e.to === group.from && e.from !== e.to
+    );
 
     if (hasReverse) {
-      // ── FIX: compute the perpendicular from the CANONICAL direction
-      // (smaller name → larger name), so both directions get opposite offsets.
       const canonical = group.from < group.to;
-      // Canonical direction vector: always from the lex-smaller state to the larger
       const canonFrom = canonical ? fs : ts;
       const canonTo   = canonical ? ts : fs;
 
-      const cdx = canonTo.x - canonFrom.x;
-      const cdy = canonTo.y - canonFrom.y;
+      const cdx  = canonTo.x - canonFrom.x;
+      const cdy  = canonTo.y - canonFrom.y;
       const clen = Math.sqrt(cdx * cdx + cdy * cdy);
       if (clen < 1) return;
 
-      // Perpendicular to canonical direction (rotated 90° CCW)
       const cnx = -cdy / clen;
       const cny =  cdx / clen;
+      const dir  = canonical ? 1 : -1;
 
-      // The group going in the canonical direction curves to +normal side,
-      // the reverse group curves to -normal side.
-      const dir = canonical ? 1 : -1;
-      const offset = 40;
+      const cpx = (fs.x + ts.x) / 2 + cnx * 40 * dir;
+      const cpy = (fs.y + ts.y) / 2 + cny * 40 * dir;
 
-      const mx = (fs.x + ts.x) / 2;
-      const my = (fs.y + ts.y) / 2;
-      const cpx = mx + cnx * offset * dir;
-      const cpy = my + cny * offset * dir;
-
-      // Exit fs toward cp
       const ang1 = Math.atan2(cpy - fs.y, cpx - fs.x);
-      const sx = fs.x + Math.cos(ang1) * R;
-      const sy = fs.y + Math.sin(ang1) * R;
-
-      // Enter ts from direction of cp (walk FROM ts TOWARD cp)
+      const sx   = fs.x + Math.cos(ang1) * R;
+      const sy   = fs.y + Math.sin(ang1) * R;
       const ang2 = Math.atan2(cpy - ts.y, cpx - ts.x);
-      const ex = ts.x + Math.cos(ang2) * R;
-      const ey = ts.y + Math.sin(ang2) * R;
+      const ex   = ts.x + Math.cos(ang2) * R;
+      const ey   = ts.y + Math.sin(ang2) * R;
 
       ctx.beginPath();
       ctx.moveTo(sx, sy);
       ctx.quadraticCurveTo(cpx, cpy, ex, ey);
       ctx.stroke();
 
-      // Arrowhead tangent at t=1: direction from cp toward endpoint
       _arrowHead(ex, ey, Math.atan2(ey - cpy, ex - cpx));
 
-      // Label at Bezier midpoint, nudged outward
       const lx = 0.25 * sx + 0.5 * cpx + 0.25 * ex;
       const ly = 0.25 * sy + 0.5 * cpy + 0.25 * ey;
       _edgeLabel(label, lx + cnx * 14 * dir, ly + cny * 14 * dir);
 
     } else {
-      const dx = ts.x - fs.x, dy = ts.y - fs.y;
+      const dx  = ts.x - fs.x, dy = ts.y - fs.y;
       const len = Math.sqrt(dx * dx + dy * dy);
       if (len < 1) return;
       const ux = dx / len, uy = dy / len;
-      const nx = -uy, ny = ux;
 
       const x1 = fs.x + ux * R, y1 = fs.y + uy * R;
       const x2 = ts.x - ux * R, y2 = ts.y - uy * R;
       ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
       _arrowHead(x2, y2, Math.atan2(dy, dx));
-      _edgeLabel(label, (x1 + x2) / 2 - ny * 12, (y1 + y2) / 2 - nx * 12);
+      // Perpendicular above the line: (uy, -ux) * 14
+      _edgeLabel(label, (x1 + x2) / 2 + uy * 14, (y1 + y2) / 2 - ux * 14);
     }
   }
 
-  // Self-loop: cubic Bezier anchored on circle rim, label inside the arch.
+  // ── Self-loop ─────────────────────────────────────────────────────────
   function _drawSelfLoop(state, label) {
     const x = state.x, y = state.y;
     const loopH = 46, loopW = 24;
 
-    const startAngle = -Math.PI / 2 - 0.42;
-    const endAngle   = -Math.PI / 2 + 0.42;
-    const x1 = x + R * Math.cos(startAngle), y1 = y + R * Math.sin(startAngle);
-    const x2 = x + R * Math.cos(endAngle),   y2 = y + R * Math.sin(endAngle);
-
-    const cp1x = x - loopW, cp1y = y - R - loopH;
-    const cp2x = x + loopW, cp2y = y - R - loopH;
+    const x1 = x + R * Math.cos(-Math.PI / 2 - 0.42);
+    const y1 = y + R * Math.sin(-Math.PI / 2 - 0.42);
+    const x2 = x + R * Math.cos(-Math.PI / 2 + 0.42);
+    const y2 = y + R * Math.sin(-Math.PI / 2 + 0.42);
 
     ctx.beginPath();
     ctx.moveTo(x1, y1);
-    ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x2, y2);
-    ctx.strokeStyle = '#333';
-    ctx.stroke();
+    ctx.bezierCurveTo(x - loopW, y - R - loopH, x + loopW, y - R - loopH, x2, y2);
+    ctx.strokeStyle = '#333'; ctx.stroke();
 
-    // Arrowhead: tangent at t=1 = direction from cp2 to endpoint
-    _arrowHead(x2, y2, Math.atan2(y2 - cp2y, x2 - cp2x));
-
-    // Label at visual apex of the arch
+    _arrowHead(x2, y2, Math.atan2(y2 - (y - R - loopH), x2 - (x + loopW)));
     _edgeLabel(label, x, y - R - loopH * 0.75);
   }
 
+  // ── Primitives ────────────────────────────────────────────────────────
   function _arrowHead(x, y, angle) {
     ctx.save();
     ctx.translate(x, y); ctx.rotate(angle);
@@ -315,8 +298,7 @@ const DiagramEditor = (() => {
     ctx.fillText(s.name, s.x, s.y);
 
     if (s.isStart) {
-      const ax = s.x - R - 28;
-      ctx.beginPath(); ctx.moveTo(ax, s.y); ctx.lineTo(s.x - R, s.y);
+      ctx.beginPath(); ctx.moveTo(s.x - R - 28, s.y); ctx.lineTo(s.x - R, s.y);
       ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5; ctx.stroke();
       _arrowHead(s.x - R, s.y, 0);
     }
@@ -393,4 +375,4 @@ const DiagramEditor = (() => {
 
   return { init, render, getDiagramData, updateFromTuple, clear };
 
-})();
+})(); 

@@ -2,8 +2,6 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Automata Converter and Minimizer</title>
   <meta name="description" content="Convert NFA to DFA and minimize DFAs. A simple academic tool for Theory of Computation." />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -78,6 +76,7 @@
         <button id="tool-add-transition">Add Transition</button>
         <button id="tool-delete">Delete</button>
         <button id="tool-clear">Clear</button>
+        <button id="tool-export-png" class="btn-highlight">Export Diagram</button>
       </div>
 
       <canvas id="diagram-canvas"></canvas>
@@ -97,6 +96,7 @@
       <button class="tab-btn" data-tab="output-diagram">Diagram</button>
       <button class="tab-btn" data-tab="steps">Steps</button>
       <button class="tab-btn" id="tab-btn-intermediate" data-tab="intermediate" style="display:none;">Intermediate DFA</button>
+      <button class="tab-btn" data-tab="simulate">Simulation</button>
     </div>
 
     <!-- Tab: Before/After -->
@@ -128,6 +128,7 @@
       <div class="toggle-row">
         <button id="diag-input-btn" class="toggle-btn active">Input</button>
         <button id="diag-output-btn" class="toggle-btn">Output</button>
+        <button id="out-export-png" class="btn-highlight" style="margin-left:auto;">Export Output</button>
       </div>
       <canvas id="output-canvas"></canvas>
       <div class="legend">
@@ -142,11 +143,17 @@
       <div id="steps-container"></div>
     </div>
 
-    <!-- Tab: Intermediate DFA -->
-    <div class="tab-pane" id="tab-pane-intermediate">
-      <p>Intermediate DFA (after NFA to DFA conversion, before minimization)</p>
-      <div id="intermediate-tuple" class="tuple-block"></div>
-      <div id="intermediate-table"></div>
+    <!-- Tab: Simulation -->
+    <div class="tab-pane" id="tab-pane-simulate">
+      <div class="simulate-container">
+        <h3>Simulate String on Output Automaton</h3>
+        <p>Test if a sequence of symbols is accepted or rejected by the output DFA.</p>
+        <div class="field" style="max-width: 400px;">
+          <input type="text" id="input-simulate" placeholder="e.g. abba" autocomplete="off" />
+        </div>
+        <button id="btn-simulate" class="btn-highlight">Simulate</button>
+        <div id="simulate-result" style="margin-top: 16px; font-weight: 600; font-size: 1.1rem; padding: 12px; border-radius: 8px; display: none;"></div>
+      </div>
     </div>
 
   </div><!-- /results-area -->

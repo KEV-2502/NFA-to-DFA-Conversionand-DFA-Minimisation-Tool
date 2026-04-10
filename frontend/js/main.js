@@ -208,22 +208,60 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // Output diagram (show input by default)
+    // Reset diagram toggle state — actual render happens when user clicks the
+    // Diagram tab, because the canvas offsetWidth/offsetHeight are 0 while the
+    // pane is hidden and drawing into a hidden canvas produces nothing visible.
     diagramFocus = 'input';
     document.getElementById('diag-input-btn')?.classList.add('active');
     document.getElementById('diag-output-btn')?.classList.remove('active');
-    _renderOutputDiagram('input');
 
     // Switch to comparison tab
     UI.switchTab('comparison');
+  }
+
+  // ── Build renderer-compatible data from API automaton object ──────────
+  function _buildRendererData(apiData) {
+    if (!apiData) return null;
+
+    const states       = Array.isArray(apiData.states)       ? apiData.states       : [];
+    const final_states = Array.isArray(apiData.final_states) ? apiData.final_states : [];
+    const start_state  = apiData.start_state || '';
+
+    // Edges are already { from, symbol, to } — dedup just in case.
+    const seen  = new Set();
+    const edges = (Array.isArray(apiData.edges) ? apiData.edges : []).filter(e => {
+      const key = `${e.from}\x00${e.symbol}\x00${e.to}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    return { states, start_state, final_states, edges };
   }
 
   // ── Output diagram ────────────────────────────────────────────────────
   function _renderOutputDiagram(which) {
     const canvas = document.getElementById('output-canvas');
     if (!canvas || !lastResult) return;
-    const data = which === 'input' ? lastResult.input : lastResult.output;
-    DiagramRenderer.render(canvas, data);
+
+    // BUG FIX: Both input and output diagrams now use the API response data
+    // directly via _buildRendererData, instead of re-parsing the editor's
+    // text string for the input case.
+    //
+    // The old input path called DiagramEditor.getDiagramData() and re-parsed
+    // the transitions string with lastIndexOf(','), which:
+    //   1. Missed transitions when getDiagramData() formats them differently
+    //      from what the parser expected (wrong edge count / missing edges).
+    //   2. Produced phantom edges because the re-parse was reading label text
+    //      as state names in some edge formats.
+    //   3. Lost arrowheads and labels because the re-parsed edges were malformed.
+    //
+    // lastResult.input.edges is built by app.py directly from the validated
+    // automaton object — it is always correct and complete.
+
+    const apiData = (which === 'input') ? lastResult.input : lastResult.output;
+    const data = _buildRendererData(apiData);
+    if (data) DiagramRenderer.render(canvas, data);
   }
 
   // ── Table toggle ──────────────────────────────────────────────────────
@@ -307,6 +345,79 @@ document.addEventListener('DOMContentLoaded', () => {
       clearTimeout(debounce);
       debounce = setTimeout(detectType, 200);
     });
+  });
+
+  // ── Export Canvas as PNG ──────────────────────────────────────────────
+  function exportCanvas(canvasId, fileName) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const link = document.createElement('a');
+    link.download = fileName;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }
+
+  document.getElementById('tool-export-png')?.addEventListener('click', () => {
+    exportCanvas('diagram-canvas', 'input_automaton.png');
+  });
+
+  document.getElementById('out-export-png')?.addEventListener('click', () => {
+    exportCanvas('output-canvas', 'output_automaton.png');
+  });
+
+  // ── Simulate String ───────────────────────────────────────────────────
+  document.getElementById('btn-simulate')?.addEventListener('click', () => {
+    const inputEl = document.getElementById('input-simulate');
+    const resultEl = document.getElementById('simulate-result');
+    if (!inputEl || !resultEl) return;
+    
+    // Check if we have an output DFA to simulate on
+    if (!lastResult || !lastResult.output || lastResult.output.type !== 'DFA') {
+       resultEl.textContent = 'Warning: No DFA output available to simulate on. Please convert an NFA or minimize a DFA first.';
+       resultEl.style.display = 'block';
+       resultEl.style.color = '#b91c1c';
+       resultEl.style.background = '#fef2f2';
+       return;
+    }
+    
+    const dfa = lastResult.output;
+    const str = inputEl.value.trim();
+    
+    let currentState = dfa.start_state;
+    let isRejected = false;
+    
+    for (let char of str) {
+      const transitions = dfa.transition_table[currentState];
+      if (!transitions || !transitions[char]) {
+        isRejected = true;
+        break;
+      }
+      
+      const nextState = transitions[char];
+      if (Array.isArray(nextState)) { // Safe fallback
+         currentState = nextState[0];
+      } else {
+         currentState = nextState;
+      }
+      
+      if (currentState === '∅') {
+         isRejected = true;
+         break;
+      }
+    }
+    
+    const isAccepted = !isRejected && dfa.final_states.includes(currentState);
+    
+    resultEl.style.display = 'block';
+    if (isAccepted) {
+       resultEl.textContent = `✅ String Accepted! Ended in final state: ${currentState}`;
+       resultEl.style.color = '#047857';
+       resultEl.style.background = '#d1fae5';
+    } else {
+       resultEl.textContent = `❌ String Rejected. Halted or ended in non-final state: ${currentState || 'N/A'}`;
+       resultEl.style.color = '#b91c1c';
+       resultEl.style.background = '#fef2f2';
+    }
   });
 
 });
